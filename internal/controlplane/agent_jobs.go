@@ -2,6 +2,7 @@ package controlplane
 
 import (
  "database/sql"
+ "encoding/json"
  "errors"
  "net/http"
  "time"
@@ -14,7 +15,7 @@ type assignedJob struct {
  SourceCommit string `json:"source_commit"`
  Engine *string `json:"engine"`
  EngineVersion *string `json:"engine_version"`
- RequestedResources []byte `json:"requested_resources"`
+ RequestedResources json.RawMessage `json:"requested_resources"`
  AttemptID string `json:"attempt_id"`
  FencingToken int64 `json:"fencing_token"`
  LeaseExpiresAt time.Time `json:"lease_expires_at"`

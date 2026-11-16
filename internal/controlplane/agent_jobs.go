@@ -37,7 +37,9 @@ func (s *Server) agentNextJob(w http.ResponseWriter,r *http.Request) {
 func (s *Server) agentStartJob(w http.ResponseWriter,r *http.Request) {
  nodeID:=nodeIDFromContext(r.Context());jobID:=r.PathValue("id"); fencing,parseErr:=strconv.ParseInt(r.Header.Get("X-Fencing-Token"),10,64); if parseErr!=nil||fencing<=0 { writeError(w,400,"valid X-Fencing-Token header is required"); return }; fencing,parseErr:=strconv.ParseInt(r.Header.Get("X-Fencing-Token"),10,64); if parseErr!=nil||fencing<=0 { writeError(w,400,"valid X-Fencing-Token header is required"); return }
  if _,err:=uuid.Parse(jobID);err!=nil{writeError(w,400,"invalid job id");return}
- tx,err:=s.db.BeginTx(r.Context(),nil);if err!=nil{writeError(w,500,"could not start transaction");return};defer tx.Rollback()
+ var tx *sql.Tx
+ var err error
+ tx,err=s.db.BeginTx(r.Context(),nil);if err!=nil{writeError(w,500,"could not start transaction");return};defer tx.Rollback()
  var attemptID string
  err=tx.QueryRowContext(r.Context(),`UPDATE build_attempts a SET status='running',started_at=COALESCE(started_at,now())
  FROM job_leases l WHERE a.id=l.attempt_id AND l.job_id=$1 AND l.node_id=$2 AND l.fencing_token=$3 AND l.expires_at>now() AND a.status='assigned'
@@ -65,7 +67,9 @@ func (s *Server) agentCompleteJob(w http.ResponseWriter,r *http.Request) {
  if err:=decodeJSON(w,r,&in);err!=nil{writeError(w,400,err.Error());return}
  if in.Status!="succeeded"&&in.Status!="failed"{writeError(w,400,"status must be succeeded or failed");return}
  if len(in.ErrorCode)>128{writeError(w,400,"error_code is too long");return}
- tx,err:=s.db.BeginTx(r.Context(),nil);if err!=nil{writeError(w,500,"could not start completion transaction");return};defer tx.Rollback()
+ var tx *sql.Tx
+ var err error
+ tx,err=s.db.BeginTx(r.Context(),nil);if err!=nil{writeError(w,500,"could not start completion transaction");return};defer tx.Rollback()
  var attemptID string
  err=tx.QueryRowContext(r.Context(),`SELECT a.id::text FROM build_attempts a JOIN job_leases l ON l.attempt_id=a.id
  WHERE l.job_id=$1 AND l.node_id=$2 AND l.fencing_token=$3 AND l.expires_at>now() AND a.status='running' FOR UPDATE OF a`,jobID,nodeID).Scan(&attemptID)

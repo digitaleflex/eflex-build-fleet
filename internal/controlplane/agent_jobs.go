@@ -35,7 +35,7 @@ func (s *Server) agentNextJob(w http.ResponseWriter,r *http.Request) {
  writeJSON(w,200,map[string]any{"job":out})
 }
 func (s *Server) agentStartJob(w http.ResponseWriter,r *http.Request) {
- nodeID:=nodeIDFromContext(r.Context());jobID:=r.PathValue("id"); fencing,parseErr:=strconv.ParseInt(r.Header.Get("X-Fencing-Token"),10,64); if parseErr!=nil||fencing<=0 { writeError(w,400,"valid X-Fencing-Token header is required"); return }
+ nodeID:=nodeIDFromContext(r.Context());jobID:=r.PathValue("id"); fencing,parseErr:=strconv.ParseInt(r.Header.Get("X-Fencing-Token"),10,64); if parseErr!=nil||fencing<=0 { writeError(w,400,"valid X-Fencing-Token header is required"); return }; fencing,parseErr:=strconv.ParseInt(r.Header.Get("X-Fencing-Token"),10,64); if parseErr!=nil||fencing<=0 { writeError(w,400,"valid X-Fencing-Token header is required"); return }
  if _,err:=uuid.Parse(jobID);err!=nil{writeError(w,400,"invalid job id");return}
  tx,err:=s.db.BeginTx(r.Context(),nil);if err!=nil{writeError(w,500,"could not start transaction");return};defer tx.Rollback()
  var attemptID string
@@ -49,7 +49,7 @@ func (s *Server) agentStartJob(w http.ResponseWriter,r *http.Request) {
  writeJSON(w,200,map[string]string{"job_id":jobID,"status":"running"})
 }
 func (s *Server) agentRenewLease(w http.ResponseWriter,r *http.Request) {
- nodeID:=nodeIDFromContext(r.Context());jobID:=r.PathValue("id")
+ nodeID:=nodeIDFromContext(r.Context());jobID:=r.PathValue("id"); fencing,parseErr:=strconv.ParseInt(r.Header.Get("X-Fencing-Token"),10,64); if parseErr!=nil||fencing<=0 { writeError(w,400,"valid X-Fencing-Token header is required"); return }
  if _,err:=uuid.Parse(jobID);err!=nil{writeError(w,400,"invalid job id");return}
  var expires time.Time
  err:=s.db.QueryRowContext(r.Context(),`UPDATE job_leases SET expires_at=now()+interval '60 seconds'
@@ -59,7 +59,7 @@ func (s *Server) agentRenewLease(w http.ResponseWriter,r *http.Request) {
  writeJSON(w,200,map[string]time.Time{"expires_at":expires})
 }
 func (s *Server) agentCompleteJob(w http.ResponseWriter,r *http.Request) {
- nodeID:=nodeIDFromContext(r.Context());jobID:=r.PathValue("id")
+ nodeID:=nodeIDFromContext(r.Context());jobID:=r.PathValue("id"); fencing,parseErr:=strconv.ParseInt(r.Header.Get("X-Fencing-Token"),10,64); if parseErr!=nil||fencing<=0 { writeError(w,400,"valid X-Fencing-Token header is required"); return }
  if _,err:=uuid.Parse(jobID);err!=nil{writeError(w,400,"invalid job id");return}
  var in completeJobInput
  if err:=decodeJSON(w,r,&in);err!=nil{writeError(w,400,err.Error());return}

@@ -46,7 +46,7 @@ func (s *Server) agentStartJob(w http.ResponseWriter,r *http.Request) {
  RETURNING a.id::text`,jobID,nodeID,fencing).Scan(&attemptID)
  if errors.Is(err,sql.ErrNoRows){writeError(w,409,"no active assigned lease for this node");return};if err!=nil{writeError(w,500,"could not start attempt");return}
  if _,err=tx.ExecContext(r.Context(),`UPDATE build_jobs SET status='running',updated_at=now() WHERE id=$1 AND status='scheduled'`,jobID);err!=nil{writeError(w,500,"could not update job");return}
- _,_=tx.ExecContext(r.Context(),`INSERT INTO job_events(job_id,event_type,payload) VALUES($1,'job.started',jsonb_build_object('node_id',$2,'attempt_id',$3))`,jobID,nodeID,attemptID)
+ _,_=tx.ExecContext(r.Context(),`INSERT INTO job_events(job_id,event_type,payload) VALUES($1,'job.started',jsonb_build_object('node_id',$2::text,'attempt_id',$3::text))`,jobID,nodeID,attemptID)
  if err=tx.Commit();err!=nil{writeError(w,500,"could not commit start");return}
  writeJSON(w,200,map[string]string{"job_id":jobID,"status":"running"})
 }
@@ -72,12 +72,12 @@ func (s *Server) agentCompleteJob(w http.ResponseWriter,r *http.Request) {
  tx,err=s.db.BeginTx(r.Context(),nil);if err!=nil{writeError(w,500,"could not start completion transaction");return};defer tx.Rollback()
  var attemptID string
  err=tx.QueryRowContext(r.Context(),`SELECT a.id::text FROM build_attempts a JOIN job_leases l ON l.attempt_id=a.id
- WHERE l.job_id=$1 AND l.node_id=$2 AND l.fencing_token=$3 AND l.expires_at>now() AND a.status='running' FOR UPDATE OF a`,jobID,nodeID).Scan(&attemptID)
+ WHERE l.job_id=$1 AND l.node_id=$2 AND l.fencing_token=$3 AND l.expires_at>now() AND a.status='running' FOR UPDATE OF a`,jobID,nodeID,fencing).Scan(&attemptID)
  if errors.Is(err,sql.ErrNoRows){writeError(w,409,"active running lease not found");return};if err!=nil{writeError(w,500,"could not verify lease");return}
  if _,err=tx.ExecContext(r.Context(),`UPDATE build_attempts SET status=$2,finished_at=now(),error_code=NULLIF($3,'') WHERE id=$1`,attemptID,in.Status,in.ErrorCode);err!=nil{writeError(w,500,"could not finish attempt");return}
  if _,err=tx.ExecContext(r.Context(),`UPDATE build_jobs SET status=$2,updated_at=now() WHERE id=$1`,jobID,in.Status);err!=nil{writeError(w,500,"could not finish job");return}
  if _,err=tx.ExecContext(r.Context(),`UPDATE job_leases SET expires_at=now() WHERE attempt_id=$1`,attemptID);err!=nil{writeError(w,500,"could not close lease");return}
- if _,err=tx.ExecContext(r.Context(),`INSERT INTO job_events(job_id,event_type,payload) VALUES($1,$2,jsonb_build_object('node_id',$3,'attempt_id',$4,'error_code',$5))`,jobID,"job."+in.Status,nodeID,attemptID,in.ErrorCode);err!=nil{writeError(w,500,"could not record event");return}
+ if _,err=tx.ExecContext(r.Context(),`INSERT INTO job_events(job_id,event_type,payload) VALUES($1,$2,jsonb_build_object('node_id',$3::text,'attempt_id',$4::text,'error_code',$5::text))`,jobID,"job."+in.Status,nodeID,attemptID,in.ErrorCode);err!=nil{writeError(w,500,"could not record event");return}
  if err=tx.Commit();err!=nil{writeError(w,500,"could not commit completion");return}
  writeJSON(w,200,map[string]string{"job_id":jobID,"status":in.Status})
 }

@@ -9,3 +9,5 @@ All agent endpoints require the per-node Bearer credential issued by the Control
 - `POST /agent/v1/jobs/{id}/complete`: report `succeeded` or `failed`, optionally with an error code.
 
 Node identity is derived from the credential, never from a request field. Mutations require an unexpired lease. The assignment includes a fencing token. This protocol tracks assignments but does not execute source code, build OCI images, or publish artifacts.
+
+For `/started`, `/lease` and `/complete`, send `X-Fencing-Token: <fencing_token>` from the assignment response. Requests with missing, expired or stale fencing tokens are rejected.

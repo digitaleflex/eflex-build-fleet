@@ -39,14 +39,18 @@ func (s *Server) issueNodeCredential(w http.ResponseWriter, r *http.Request) {
 	}
 	token := base64.RawURLEncoding.EncodeToString(raw)
 	hash := sha256.Sum256([]byte(token))
-	if _, err := s.db.ExecContext(r.Context(), "UPDATE node_credentials SET revoked_at=now() WHERE node_id=$1 AND revoked_at IS NULL", id); err != nil {
+	tx, err := s.db.BeginTx(r.Context(), nil)
+	if err != nil { writeError(w, http.StatusInternalServerError, "could not rotate credential"); return }
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(r.Context(), "UPDATE node_credentials SET revoked_at=now() WHERE node_id=$1 AND revoked_at IS NULL", id); err != nil {
 		writeError(w, http.StatusInternalServerError, "could not rotate credential")
 		return
 	}
-	if _, err := s.db.ExecContext(r.Context(), "INSERT INTO node_credentials(node_id,token_hash) VALUES($1,$2)", id, hash[:]); err != nil {
+	if _, err := tx.ExecContext(r.Context(), "INSERT INTO node_credentials(node_id,token_hash) VALUES($1,$2)", id, hash[:]); err != nil {
 		writeError(w, http.StatusInternalServerError, "could not store credential")
 		return
 	}
+	if err := tx.Commit(); err != nil { writeError(w, http.StatusInternalServerError, "could not commit credential rotation"); return }
 	writeJSON(w, http.StatusCreated, credentialResponse{NodeID:id, Token:token, Warning:"Store this token securely. It will not be shown again."})
 }
 

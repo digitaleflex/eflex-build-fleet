@@ -17,9 +17,9 @@ import (
 
 var errNoRows = sql.ErrNoRows
 
-type Server struct { db *sql.DB; logger *slog.Logger; token string }
+type Server struct { db *sql.DB; logger *slog.Logger; token string; rl *rateLimiter }
 
-func New(db *sql.DB, token string, logger *slog.Logger) *Server { return &Server{db:db,token:token,logger:logger} }
+func New(db *sql.DB, token string, logger *slog.Logger) *Server { return &Server{db:db,token:token,logger:logger,rl:newRateLimiter(20,40)} }
 
 func (s *Server) Handler() http.Handler {
 	mux:=http.NewServeMux()
@@ -35,7 +35,7 @@ func (s *Server) Handler() http.Handler {
 	admin.HandleFunc("GET /api/v1/jobs",s.listJobs)
 	admin.HandleFunc("GET /api/v1/jobs/{id}",s.getJob)
 	admin.HandleFunc("POST /api/v1/scheduler/dispatch",s.dispatchNext)
-	mux.Handle("/api/v1/",s.authenticate(admin))
+	mux.Handle("/api/v1/",s.withRateLimit(s.authenticate(admin),s.rl))
 	agent:=http.NewServeMux()
 	agent.HandleFunc("POST /agent/v1/heartbeat",s.agentHeartbeat)
 	agent.HandleFunc("GET /agent/v1/jobs/next",s.agentNextJob)

@@ -32,3 +32,12 @@ curl -X POST http://localhost:8080/api/v1/nodes \
 ## Scope of this slice
 
 This slice delivers PostgreSQL-backed node registration, listing, retrieval, heartbeat, readiness checks, and token-protected HTTP routes. It does not yet implement agent-specific credentials/mTLS, scheduling, leases, job execution, or build engines. The shared API token is a development bootstrap mechanism, not the final production identity model.
+
+## Jobs and initial scheduler
+
+- `POST /api/v1/jobs`: queue a job. Required fields: `tenant_id`, `source_commit` (40/64 hex chars); optional `idempotency_key`, `engine`, `engine_version`, `requested_resources`.
+- `GET /api/v1/jobs?tenant_id=...`: list jobs for a tenant.
+- `GET /api/v1/jobs/{id}`: retrieve a job.
+- `POST /api/v1/scheduler/dispatch`: atomically claim one queued job and one healthy node, create an attempt and a 60-second lease.
+
+The scheduler uses PostgreSQL row locks with `SKIP LOCKED`, so concurrent dispatch requests cannot claim the same queued job. This first slice does not yet match requested resources to node capabilities; capability-aware placement and lease renewal/expiry recovery are follow-up work. The API token remains an administrative bootstrap credential and must not be exposed to tenants.

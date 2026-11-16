@@ -93,3 +93,39 @@ components:
         capabilities:
           type: object
           additionalProperties: true
+
+  /api/v1/jobs:
+    post:
+      operationId: createBuildJob
+      summary: Queue a build job
+      responses:
+        '201': { description: Job created }
+        '200': { description: Existing idempotent job returned }
+        '400': { description: Invalid request }
+    get:
+      operationId: listBuildJobs
+      summary: List jobs for a tenant
+      parameters:
+        - in: query
+          name: tenant_id
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Jobs returned }
+  /api/v1/jobs/{id}:
+    get:
+      operationId: getBuildJob
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200': { description: Job returned }
+        '404': { description: Job not found }
+  /api/v1/scheduler/dispatch:
+    post:
+      operationId: dispatchNextBuildJob
+      summary: Atomically assign one queued job to a healthy node
+      responses:
+        '200': { description: Dispatch result }

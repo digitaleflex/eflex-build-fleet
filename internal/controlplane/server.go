@@ -38,6 +38,10 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("/api/v1/",s.authenticate(admin))
 	agent:=http.NewServeMux()
 	agent.HandleFunc("POST /agent/v1/heartbeat",s.agentHeartbeat)
+	agent.HandleFunc("GET /agent/v1/jobs/next",s.agentNextJob)
+	agent.HandleFunc("POST /agent/v1/jobs/{id}/started",s.agentStartJob)
+	agent.HandleFunc("POST /agent/v1/jobs/{id}/lease",s.agentRenewLease)
+	agent.HandleFunc("POST /agent/v1/jobs/{id}/complete",s.agentCompleteJob)
 	mux.Handle("/agent/v1/",s.authenticateNode(agent))
 	return securityHeaders(mux)
 }

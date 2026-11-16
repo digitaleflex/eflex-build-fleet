@@ -52,7 +52,8 @@ func validateCreateJob(in *createJobInput) string {
 	if len(in.IdempotencyKey)>200{return "idempotency_key must be at most 200 characters"}
 	if len(in.Engine)>64||len(in.EngineVersion)>64{return "engine and engine_version must be at most 64 characters"}
 	if len(in.RequestedResources)==0{in.RequestedResources=json.RawMessage(`{}`)}
-	if !json.Valid(in.RequestedResources)||in.RequestedResources[0]!='{' {return "requested_resources must be a JSON object"}
+	resourceJSON:=strings.TrimSpace(string(in.RequestedResources))
+	if !json.Valid(in.RequestedResources)||len(resourceJSON)==0||resourceJSON[0]!='{' {return "requested_resources must be a JSON object"}
 	return ""
 }
 

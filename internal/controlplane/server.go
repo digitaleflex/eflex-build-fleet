@@ -17,7 +17,7 @@ import (
 
 var errNoRows = sql.ErrNoRows
 
-type Server struct { db *sql.DB; logger *slog.Logger; token string; rl *rateLimiter; metrics *metrics }
+type Server struct { db *sql.DB; logger *slog.Logger; token string; rl *rateLimiter; metrics *metrics; tlsCertFile, tlsKeyFile, clientCAFile string }
 
 func New(db *sql.DB, token string, logger *slog.Logger) *Server { return &Server{db:db,token:token,logger:logger,rl:newRateLimiter(20,40),metrics:newMetrics()} }
 
@@ -47,10 +47,20 @@ func (s *Server) Handler() http.Handler {
 	return securityHeaders(mux)
 }
 
+func (s *Server) EnableTLS(certFile, keyFile, caFile string) {
+	s.tlsCertFile = certFile
+	s.tlsKeyFile = keyFile
+	s.clientCAFile = caFile
+}
+
 func (s *Server) Run(ctx context.Context,address string) error {
 	server:=&http.Server{Addr:address,Handler:s.Handler(),ReadHeaderTimeout:5*time.Second,IdleTimeout:60*time.Second}
 	errCh:=make(chan error,1)
-	go func(){s.logger.Info("control plane listening","address",address);errCh<-server.ListenAndServe()}()
+	if s.tlsCertFile != "" && s.tlsKeyFile != "" {
+		go func(){s.logger.Info("control plane listening (TLS)","address",address);errCh<-server.ListenAndServeTLS(s.tlsCertFile,s.tlsKeyFile)}()
+	} else {
+		go func(){s.logger.Info("control plane listening","address",address);errCh<-server.ListenAndServe()}()
+	}
 	select {
 	case <-ctx.Done():
 		shutdownCtx,cancel:=context.WithTimeout(context.Background(),10*time.Second);defer cancel()

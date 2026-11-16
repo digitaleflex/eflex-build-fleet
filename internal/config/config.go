@@ -12,6 +12,9 @@ type Config struct {
 	DatabaseURL string
 	APIToken string
 	LogLevel slog.Level
+	TLSCertFile string
+	TLSKeyFile string
+	ClientCAFile string
 }
 
 // Load keeps the lightweight configuration path used by the Build Agent.
@@ -27,6 +30,9 @@ func LoadControlPlane() (Config, error) {
 		DatabaseURL: strings.TrimSpace(os.Getenv("DATABASE_URL")),
 		APIToken: strings.TrimSpace(os.Getenv("FLEET_API_TOKEN")),
 		LogLevel: logLevel(),
+		TLSCertFile: strings.TrimSpace(os.Getenv("TLS_CERT_FILE")),
+		TLSKeyFile: strings.TrimSpace(os.Getenv("TLS_KEY_FILE")),
+		ClientCAFile: strings.TrimSpace(os.Getenv("CLIENT_CA_FILE")),
 	}
 	if cfg.DatabaseURL == "" { return Config{}, fmt.Errorf("DATABASE_URL is required") }
 	if len(cfg.APIToken) < 32 { return Config{}, fmt.Errorf("FLEET_API_TOKEN must contain at least 32 characters") }

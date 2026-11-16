@@ -9,7 +9,11 @@ import (
 	"time"
 )
 
-type Server struct { name, address string; logger *slog.Logger }
+type Server struct {
+	name    string
+	address string
+	logger  *slog.Logger
+}
 
 func New(name, address string, logger *slog.Logger) *Server {
 	return &Server{name: name, address: address, logger: logger}
@@ -18,22 +22,38 @@ func New(name, address string, logger *slog.Logger) *Server {
 func (s *Server) Run(ctx context.Context) error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(w, http.StatusOK, map[string]string{"status":"ok", "service":s.name})
+		writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "service": s.name})
 	})
 	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(w, http.StatusOK, map[string]string{"status":"ready", "service":s.name})
+		writeJSON(w, http.StatusOK, map[string]string{"status": "ready", "service": s.name})
 	})
-	server := &http.Server{Addr:s.address, Handler:mux, ReadHeaderTimeout:5*time.Second}
+
+	server := &http.Server{
+		Addr: s.address, Handler: mux, ReadHeaderTimeout: 5 * time.Second,
+	}
 	errCh := make(chan error, 1)
-	go func() { s.logger.Info("http server listening", "service", s.name, "address", s.address); errCh <- server.ListenAndServe() }()
+	go func() {
+		s.logger.Info("http server listening", "service", s.name, "address", s.address)
+		errCh <- server.ListenAndServe()
+	}()
+
 	select {
 	case <-ctx.Done():
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second); defer cancel()
-		if err := server.Shutdown(shutdownCtx); err != nil { return err }
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := server.Shutdown(shutdownCtx); err != nil {
+			return err
+		}
 		err := <-errCh
-		if errors.Is(err, http.ErrServerClosed) { return nil }; return err
+		if errors.Is(err, http.ErrServerClosed) {
+			return nil
+		}
+		return err
 	case err := <-errCh:
-		if errors.Is(err, http.ErrServerClosed) { return nil }; return err
+		if errors.Is(err, http.ErrServerClosed) {
+			return nil
+		}
+		return err
 	}
 }
 

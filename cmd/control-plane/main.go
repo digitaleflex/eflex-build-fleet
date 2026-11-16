@@ -15,7 +15,7 @@ import (
 )
 
 func main() {
-	cfg,err:=config.Load()
+	cfg,err:=config.LoadControlPlane()
 	if err!=nil { slog.Error("invalid configuration","error",err); os.Exit(1) }
 	logger:=slog.New(slog.NewJSONHandler(os.Stdout,&slog.HandlerOptions{Level:cfg.LogLevel}))
 	db,err:=sql.Open("pgx",cfg.DatabaseURL)

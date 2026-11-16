@@ -52,7 +52,8 @@ func validateCreateJob(in *createJobInput) string {
 	if len(in.IdempotencyKey)>200{return "idempotency_key must be at most 200 characters"}
 	if len(in.Engine)>64||len(in.EngineVersion)>64{return "engine and engine_version must be at most 64 characters"}
 	if len(in.RequestedResources)==0{in.RequestedResources=json.RawMessage(`{}`)}
-	if !json.Valid(in.RequestedResources)||in.RequestedResources[0]!='{' {return "requested_resources must be a JSON object"}
+	resourceJSON:=strings.TrimSpace(string(in.RequestedResources))
+	if !json.Valid(in.RequestedResources)||len(resourceJSON)==0||resourceJSON[0]!='{' {return "requested_resources must be a JSON object"}
 	return ""
 }
 
@@ -102,10 +103,10 @@ func (s *Server) getJob(w http.ResponseWriter,r *http.Request) {
 func (s *Server) dispatchNext(w http.ResponseWriter,r *http.Request) {
 	tx,err:=s.db.BeginTx(r.Context(),nil);if err!=nil{writeError(w,500,"could not start dispatch transaction");return};defer tx.Rollback()
 	var jobID string
-	err=tx.QueryRowContext(r.Context(),`SELECT id::text FROM build_jobs WHERE status='queued' ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 1`).Scan(&jobID)
+	err=tx.QueryRowContext(r.Context(),`SELECT id::text FROM build_jobs WHERE status='queued' ORDER BY created_at LIMIT 1 FOR UPDATE SKIP LOCKED`).Scan(&jobID)
 	if errors.Is(err,sql.ErrNoRows){writeJSON(w,200,map[string]any{"dispatched":false});return};if err!=nil{writeError(w,500,"could not select queued job");return}
 	var nodeID string
-	err=tx.QueryRowContext(r.Context(),`SELECT id::text FROM build_nodes WHERE status='ready' AND last_heartbeat_at>now()-interval '90 seconds' ORDER BY last_heartbeat_at DESC FOR UPDATE SKIP LOCKED LIMIT 1`).Scan(&nodeID)
+	err=tx.QueryRowContext(r.Context(),`SELECT id::text FROM build_nodes WHERE status='ready' AND last_heartbeat_at>now()-interval '90 seconds' ORDER BY last_heartbeat_at DESC LIMIT 1 FOR UPDATE SKIP LOCKED`).Scan(&nodeID)
 	if errors.Is(err,sql.ErrNoRows){writeJSON(w,200,map[string]any{"dispatched":false,"reason":"no_healthy_build_node"});return};if err!=nil{writeError(w,500,"could not select build node");return}
 	var attemptNo int
 	if err=tx.QueryRowContext(r.Context(),`SELECT COALESCE(MAX(attempt_number),0)+1 FROM build_attempts WHERE job_id=$1`,jobID).Scan(&attemptNo);err!=nil{writeError(w,500,"could not calculate attempt number");return}

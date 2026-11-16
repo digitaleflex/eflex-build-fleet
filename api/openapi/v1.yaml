@@ -1,0 +1,20 @@
+openapi: 3.1.0
+info:
+  title: E-FLEX Build Fleet Control Plane API
+  version: 1.0.0
+  description: Initial health contract; scheduler endpoints will be added in the next implementation slice.
+servers:
+  - url: http://localhost:8080
+paths:
+  /healthz:
+    get:
+      operationId: getLiveness
+      summary: Process liveness
+      responses:
+        '200': { description: Process is alive }
+  /readyz:
+    get:
+      operationId: getReadiness
+      summary: Service readiness
+      responses:
+        '200': { description: Service is ready }

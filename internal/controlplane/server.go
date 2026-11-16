@@ -17,14 +17,15 @@ import (
 
 var errNoRows = sql.ErrNoRows
 
-type Server struct { db *sql.DB; logger *slog.Logger; token string; rl *rateLimiter }
+type Server struct { db *sql.DB; logger *slog.Logger; token string; rl *rateLimiter; metrics *metrics }
 
-func New(db *sql.DB, token string, logger *slog.Logger) *Server { return &Server{db:db,token:token,logger:logger,rl:newRateLimiter(20,40)} }
+func New(db *sql.DB, token string, logger *slog.Logger) *Server { return &Server{db:db,token:token,logger:logger,rl:newRateLimiter(20,40),metrics:newMetrics()} }
 
 func (s *Server) Handler() http.Handler {
 	mux:=http.NewServeMux()
 	mux.HandleFunc("GET /healthz",func(w http.ResponseWriter,_ *http.Request){writeJSON(w,200,map[string]string{"status":"ok","service":"control-plane"})})
 	mux.HandleFunc("GET /readyz",s.readiness)
+	mux.HandleFunc("GET /metrics",s.metricsHandler)
 	admin:=http.NewServeMux()
 	admin.HandleFunc("POST /api/v1/nodes",s.registerNode)
 	admin.HandleFunc("GET /api/v1/nodes",s.listNodes)

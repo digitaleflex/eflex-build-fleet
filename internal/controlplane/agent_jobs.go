@@ -52,10 +52,10 @@ func (s *Server) agentRenewLease(w http.ResponseWriter,r *http.Request) {
  nodeID:=nodeIDFromContext(r.Context());jobID:=r.PathValue("id"); fencing,parseErr:=strconv.ParseInt(r.Header.Get("X-Fencing-Token"),10,64); if parseErr!=nil||fencing<=0 { writeError(w,400,"valid X-Fencing-Token header is required"); return }
  if _,err:=uuid.Parse(jobID);err!=nil{writeError(w,400,"invalid job id");return}
  var expires time.Time
- err:=s.db.QueryRowContext(r.Context(),`UPDATE job_leases SET expires_at=now()+interval '60 seconds'
+ queryErr:=s.db.QueryRowContext(r.Context(),`UPDATE job_leases SET expires_at=now()+interval '60 seconds'
  WHERE job_id=$1 AND node_id=$2 AND fencing_token=$3 AND expires_at>now() AND attempt_id IN (SELECT id FROM build_attempts WHERE status='running')
  RETURNING expires_at`,jobID,nodeID,fencing).Scan(&expires)
- if errors.Is(err,sql.ErrNoRows){writeError(w,409,"active lease not found");return};if err!=nil{writeError(w,500,"could not renew lease");return}
+ if errors.Is(queryErr,sql.ErrNoRows){writeError(w,409,"active lease not found");return};if queryErr!=nil{writeError(w,500,"could not renew lease");return}
  writeJSON(w,200,map[string]time.Time{"expires_at":expires})
 }
 func (s *Server) agentCompleteJob(w http.ResponseWriter,r *http.Request) {

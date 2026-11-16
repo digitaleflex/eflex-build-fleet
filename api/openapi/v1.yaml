@@ -1,20 +1,95 @@
 openapi: 3.1.0
 info:
   title: E-FLEX Build Fleet Control Plane API
-  version: 1.0.0
-  description: Initial health contract; scheduler endpoints will be added in the next implementation slice.
+  version: 1.1.0
+  description: Control Plane health and build-node registration API.
 servers:
   - url: http://localhost:8080
+security:
+  - bearerAuth: []
 paths:
   /healthz:
     get:
+      security: []
       operationId: getLiveness
       summary: Process liveness
       responses:
         '200': { description: Process is alive }
   /readyz:
     get:
+      security: []
       operationId: getReadiness
-      summary: Service readiness
+      summary: Database readiness
       responses:
-        '200': { description: Service is ready }
+        '200': { description: Service and database are ready }
+        '503': { description: Database unavailable }
+  /api/v1/nodes:
+    get:
+      operationId: listBuildNodes
+      summary: List registered build nodes
+      responses:
+        '200': { description: Nodes returned }
+        '401': { description: Unauthorized }
+    post:
+      operationId: registerBuildNode
+      summary: Register a build node
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NodeRegistration'
+      responses:
+        '201': { description: Node registered in pending state }
+        '400': { description: Invalid request }
+        '409': { description: Node name already exists }
+        '401': { description: Unauthorized }
+  /api/v1/nodes/{id}:
+    get:
+      operationId: getBuildNode
+      summary: Get a build node
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200': { description: Node returned }
+        '404': { description: Node not found }
+        '401': { description: Unauthorized }
+  /api/v1/nodes/{id}/heartbeat:
+    post:
+      operationId: sendNodeHeartbeat
+      summary: Update node heartbeat and mark it ready
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                agent_version: { type: string, maxLength: 64 }
+      responses:
+        '200': { description: Heartbeat accepted }
+        '404': { description: Node not found }
+        '401': { description: Unauthorized }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+  schemas:
+    NodeRegistration:
+      type: object
+      required: [node_name]
+      additionalProperties: false
+      properties:
+        node_name: { type: string, minLength: 1, maxLength: 128 }
+        agent_version: { type: string, maxLength: 64 }
+        capabilities:
+          type: object
+          additionalProperties: true

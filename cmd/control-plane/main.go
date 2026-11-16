@@ -9,6 +9,8 @@ import (
 	"syscall"
 	"time"
 
+	"strings"
+
 	"github.com/digitaleflex/eflex-build-fleet/internal/config"
 	"github.com/digitaleflex/eflex-build-fleet/internal/controlplane"
 	_ "github.com/jackc/pgx/v5/stdlib"
@@ -26,5 +28,9 @@ func main() {
 	pingCtx,cancel:=context.WithTimeout(ctx,5*time.Second)
 	err=db.PingContext(pingCtx); cancel()
 	if err!=nil { logger.Error("database unavailable","error",err); os.Exit(1) }
-	if err:=controlplane.New(db,cfg.APIToken,logger).Run(ctx,cfg.Address); err!=nil { logger.Error("control plane stopped","error",err); os.Exit(1) }
+	srv:=controlplane.New(db,cfg.APIToken,logger)
+	interval:=5*time.Second
+	if v:=strings.TrimSpace(os.Getenv("SCHEDULER_INTERVAL")); v!="" { if d,err:=time.ParseDuration(v); err==nil { interval=d } }
+	go srv.RunSchedulerLoop(ctx,interval,logger)
+	if err:=srv.Run(ctx,cfg.Address); err!=nil { logger.Error("control plane stopped","error",err); os.Exit(1) }
 }

@@ -6,6 +6,14 @@ E-FLEX Build Fleet est le système interne d'E-FLEX chargé de planifier, exécu
 
 Il ne remplace pas BuildKit, Railpack ou les standards OCI. Il apporte la couche que nous possédons : Control Plane, scheduler, agents, contrats, politiques multi-tenant, contrôle des ressources, isolation, résilience, traçabilité et intégration avec E-FLEX App.
 
+> [!IMPORTANT]
+> **Projet en attente — rien n'est implémenté.** Le développement est différé
+> ([ADR-0009](docs/adr/0009-deferred-start-coolify-build-server.md)). En attendant, les builds passent
+> par un **serveur de build Coolify dédié** et un registre privé, avec les invariants ci-dessous
+> appliqués autant que possible. Le démarrage exige un des déclencheurs listés dans l'ADR-0009 (plus de
+> trois serveurs de build, limite de Coolify mesurée, client exigeant une isolation renforcée, coût
+> dépassé, capacité humaine disponible).
+
 ## Statut de référence
 
 **Architecture baseline v1.0 — approuvée le 16 novembre 2026.**
@@ -62,6 +70,7 @@ Toute évolution d'une décision acceptée doit suivre la [politique de décisio
 | Registre auto-hébergé | Zot comme premier candidat à qualifier derrière une abstraction OCI |
 | Interface client | E-FLEX App ; pas de deuxième console dans le MVP |
 | Runtime | Hors périmètre ; déploiement délégué à E-FLEX App / Coolify |
+| Calendrier | Démarrage différé ; serveur de build Coolify en attendant (ADR-0009) |
 
 Les décisions détaillées et leurs alternatives sont enregistrées dans [docs/adr](docs/adr/).
 

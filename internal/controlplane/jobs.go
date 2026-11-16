@@ -52,7 +52,8 @@ func validateCreateJob(in *createJobInput) string {
 	if len(in.IdempotencyKey)>200{return "idempotency_key must be at most 200 characters"}
 	if len(in.Engine)>64||len(in.EngineVersion)>64{return "engine and engine_version must be at most 64 characters"}
 	if len(in.RequestedResources)==0{in.RequestedResources=json.RawMessage(`{}`)}
-	if !json.Valid(in.RequestedResources)||in.RequestedResources[0]!='{' {return "requested_resources must be a JSON object"}
+	resourceJSON:=strings.TrimSpace(string(in.RequestedResources))
+	if !json.Valid(in.RequestedResources)||len(resourceJSON)==0||resourceJSON[0]!='{' {return "requested_resources must be a JSON object"}
 	return ""
 }
 
@@ -73,7 +74,7 @@ func (s *Server) createJob(w http.ResponseWriter,r *http.Request) {
 		if err==nil{writeJSON(w,200,out);return}
 	}
 	if err!=nil{writeError(w,500,"could not create build job");return}
-	_,_=s.db.ExecContext(r.Context(),`INSERT INTO job_events(job_id,event_type,payload) VALUES($1,'job.queued',jsonb_build_object('tenant_id',$2))`,out.ID,out.TenantID)
+	_,_=s.db.ExecContext(r.Context(),`INSERT INTO job_events(job_id,event_type,payload) VALUES($1,'job.queued',jsonb_build_object('tenant_id',$2::text))`,out.ID,out.TenantID)
 	writeJSON(w,201,out)
 }
 
@@ -102,10 +103,10 @@ func (s *Server) getJob(w http.ResponseWriter,r *http.Request) {
 func (s *Server) dispatchNext(w http.ResponseWriter,r *http.Request) {
 	tx,err:=s.db.BeginTx(r.Context(),nil);if err!=nil{writeError(w,500,"could not start dispatch transaction");return};defer tx.Rollback()
 	var jobID string
-	err=tx.QueryRowContext(r.Context(),`SELECT id::text FROM build_jobs WHERE status='queued' ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 1`).Scan(&jobID)
+	err=tx.QueryRowContext(r.Context(),`SELECT id::text FROM build_jobs WHERE status='queued' ORDER BY created_at LIMIT 1 FOR UPDATE SKIP LOCKED`).Scan(&jobID)
 	if errors.Is(err,sql.ErrNoRows){writeJSON(w,200,map[string]any{"dispatched":false});return};if err!=nil{writeError(w,500,"could not select queued job");return}
 	var nodeID string
-	err=tx.QueryRowContext(r.Context(),`SELECT id::text FROM build_nodes WHERE status='ready' AND last_heartbeat_at>now()-interval '90 seconds' ORDER BY last_heartbeat_at DESC FOR UPDATE SKIP LOCKED LIMIT 1`).Scan(&nodeID)
+	err=tx.QueryRowContext(r.Context(),`SELECT id::text FROM build_nodes WHERE status='ready' AND last_heartbeat_at>now()-interval '90 seconds' ORDER BY last_heartbeat_at DESC LIMIT 1 FOR UPDATE SKIP LOCKED`).Scan(&nodeID)
 	if errors.Is(err,sql.ErrNoRows){writeJSON(w,200,map[string]any{"dispatched":false,"reason":"no_healthy_build_node"});return};if err!=nil{writeError(w,500,"could not select build node");return}
 	var attemptNo int
 	if err=tx.QueryRowContext(r.Context(),`SELECT COALESCE(MAX(attempt_number),0)+1 FROM build_attempts WHERE job_id=$1`,jobID).Scan(&attemptNo);err!=nil{writeError(w,500,"could not calculate attempt number");return}
@@ -116,8 +117,8 @@ func (s *Server) dispatchNext(w http.ResponseWriter,r *http.Request) {
 	var expires time.Time
 	if err=tx.QueryRowContext(r.Context(),`INSERT INTO job_leases(job_id,attempt_id,node_id,fencing_token,expires_at) VALUES($1,$2,$3,$4,now()+interval '60 seconds') RETURNING expires_at`,jobID,attemptID,nodeID,fencing).Scan(&expires);err!=nil{writeError(w,500,"could not create job lease");return}
 	if _,err=tx.ExecContext(r.Context(),`UPDATE build_jobs SET status='scheduled',updated_at=now() WHERE id=$1`,jobID);err!=nil{writeError(w,500,"could not update job");return}
-	if _,err=tx.ExecContext(r.Context(),`INSERT INTO job_events(job_id,event_type,payload) VALUES($1,'job.scheduled',jsonb_build_object('node_id',$2,'attempt_id',$3,'fencing_token',$4))`,jobID,nodeID,attemptID,fencing);err!=nil{writeError(w,500,"could not record job event");return}
-	if _,err=tx.ExecContext(r.Context(),`INSERT INTO outbox_events(aggregate_type,aggregate_id,event_type,payload) VALUES('build_job',$1,'job.scheduled',jsonb_build_object('node_id',$2,'attempt_id',$3,'fencing_token',$4))`,jobID,nodeID,attemptID,fencing);err!=nil{writeError(w,500,"could not record outbox event");return}
+	if _,err=tx.ExecContext(r.Context(),`INSERT INTO job_events(job_id,event_type,payload) VALUES($1,'job.scheduled',jsonb_build_object('node_id',$2::text,'attempt_id',$3::text,'fencing_token',$4::bigint))`,jobID,nodeID,attemptID,fencing);err!=nil{writeError(w,500,"could not record job event");return}
+	if _,err=tx.ExecContext(r.Context(),`INSERT INTO outbox_events(aggregate_type,aggregate_id,event_type,payload) VALUES('build_job',$1,'job.scheduled',jsonb_build_object('node_id',$2::text,'attempt_id',$3::text,'fencing_token',$4::bigint))`,jobID,nodeID,attemptID,fencing);err!=nil{writeError(w,500,"could not record outbox event");return}
 	if err=tx.Commit();err!=nil{writeError(w,500,"could not commit dispatch");return}
 	writeJSON(w,200,dispatchResult{JobID:jobID,AttemptID:attemptID,NodeID:nodeID,FencingToken:fencing,LeaseExpiresAt:expires})
 }

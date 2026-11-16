@@ -41,3 +41,7 @@ This slice delivers PostgreSQL-backed node registration, listing, retrieval, hea
 - `POST /api/v1/scheduler/dispatch`: atomically claim one queued job and one healthy node, create an attempt and a 60-second lease.
 
 The scheduler uses PostgreSQL row locks with `SKIP LOCKED`, so concurrent dispatch requests cannot claim the same queued job. This first slice does not yet match requested resources to node capabilities; capability-aware placement and lease renewal/expiry recovery are follow-up work. The API token remains an administrative bootstrap credential and must not be exposed to tenants.
+
+## Agent job protocol
+
+See [docs/agent-protocol.md](docs/agent-protocol.md). Agents authenticate with individual node credentials and can poll assignments, acknowledge start, renew leases, and report completion. The protocol records lifecycle transitions; it does not execute builds.

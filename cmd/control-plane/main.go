@@ -29,6 +29,7 @@ func main() {
 	err=db.PingContext(pingCtx); cancel()
 	if err!=nil { logger.Error("database unavailable","error",err); os.Exit(1) }
 	srv:=controlplane.New(db,cfg.APIToken,logger)
+	srv.EnableTLS(cfg.TLSCertFile,cfg.TLSKeyFile,cfg.ClientCAFile)
 	interval:=5*time.Second
 	if v:=strings.TrimSpace(os.Getenv("SCHEDULER_INTERVAL")); v!="" { if d,err:=time.ParseDuration(v); err==nil { interval=d } }
 	go srv.RunSchedulerLoop(ctx,interval,logger)

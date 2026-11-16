@@ -79,6 +79,7 @@ func (s *Server) createJob(w http.ResponseWriter,r *http.Request) {
 	}
 	if err!=nil{writeError(w,500,"could not create build job");return}
 	_,_=s.db.ExecContext(r.Context(),`INSERT INTO job_events(job_id,event_type,payload) VALUES($1,'job.queued',jsonb_build_object('tenant_id',$2::text))`,out.ID,out.TenantID)
+	if s.metrics!=nil { s.metrics.inc("jobs_created_total") }
 	writeJSON(w,201,out)
 }
 
@@ -95,9 +96,16 @@ func (s *Server) listJobs(w http.ResponseWriter,r *http.Request) {
 
 func (s *Server) getJob(w http.ResponseWriter,r *http.Request) {
 	id:=r.PathValue("id");if _,err:=uuid.Parse(id);err!=nil{writeError(w,400,"invalid job id");return}
+	tenant:=strings.TrimSpace(r.URL.Query().Get("tenant_id"))
 	var j job
-	err:=s.db.QueryRowContext(r.Context(),`SELECT id::text,tenant_id,status,source_commit,engine,engine_version,requested_resources,required_capabilities,created_at,updated_at FROM build_jobs WHERE id=$1`,id).
-		Scan(&j.ID,&j.TenantID,&j.Status,&j.SourceCommit,&j.Engine,&j.EngineVersion,&j.RequestedResources,&j.RequiredCapabilities,&j.CreatedAt,&j.UpdatedAt)
+	var err error
+	if tenant!="" {
+		err=s.db.QueryRowContext(r.Context(),`SELECT id::text,tenant_id,status,source_commit,engine,engine_version,requested_resources,required_capabilities,created_at,updated_at FROM build_jobs WHERE id=$1 AND tenant_id=$2`,id,tenant).
+			Scan(&j.ID,&j.TenantID,&j.Status,&j.SourceCommit,&j.Engine,&j.EngineVersion,&j.RequestedResources,&j.RequiredCapabilities,&j.CreatedAt,&j.UpdatedAt)
+	} else {
+		err=s.db.QueryRowContext(r.Context(),`SELECT id::text,tenant_id,status,source_commit,engine,engine_version,requested_resources,required_capabilities,created_at,updated_at FROM build_jobs WHERE id=$1`,id).
+			Scan(&j.ID,&j.TenantID,&j.Status,&j.SourceCommit,&j.Engine,&j.EngineVersion,&j.RequestedResources,&j.RequiredCapabilities,&j.CreatedAt,&j.UpdatedAt)
+	}
 	if errors.Is(err,sql.ErrNoRows){writeError(w,404,"job not found");return};if err!=nil{writeError(w,500,"could not read job");return}
 	writeJSON(w,200,j)
 }
@@ -124,5 +132,6 @@ func (s *Server) dispatchNext(w http.ResponseWriter,r *http.Request) {
 	if _,err=tx.ExecContext(r.Context(),`INSERT INTO job_events(job_id,event_type,payload) VALUES($1,'job.scheduled',jsonb_build_object('node_id',$2::text,'attempt_id',$3::text,'fencing_token',$4::bigint))`,jobID,nodeID,attemptID,fencing);err!=nil{writeError(w,500,"could not record job event");return}
 	if _,err=tx.ExecContext(r.Context(),`INSERT INTO outbox_events(aggregate_type,aggregate_id,event_type,payload) VALUES('build_job',$1,'job.scheduled',jsonb_build_object('node_id',$2::text,'attempt_id',$3::text,'fencing_token',$4::bigint))`,jobID,nodeID,attemptID,fencing);err!=nil{writeError(w,500,"could not record outbox event");return}
 	if err=tx.Commit();err!=nil{writeError(w,500,"could not commit dispatch");return}
+	if s.metrics!=nil { s.metrics.inc("jobs_dispatched_total") }
 	writeJSON(w,200,dispatchResult{JobID:jobID,AttemptID:attemptID,NodeID:nodeID,FencingToken:fencing,LeaseExpiresAt:expires})
 }

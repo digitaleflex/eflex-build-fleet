@@ -1,6 +1,6 @@
 # ADR-0009 — Démarrage différé ; serveur de build Coolify en attendant
 
-- **Statut :** Accepted
+- **Statut :** Superseded en partie par [ADR-0010](0010-reprise-du-developpement.md) (point 1, développement différé). Les points 2 à 4 restent en vigueur.
 - **Date :** 2026-11-16
 - **Portée :** calendrier du projet et chemin de build intérimaire
 - **Ne remplace pas :** ADR-0001 à ADR-0008, qui restent la cible

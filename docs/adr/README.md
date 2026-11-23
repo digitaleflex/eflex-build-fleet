@@ -14,7 +14,8 @@ Les ADR constituent l'historique des décisions techniques et produit structuran
 | [0006](0006-untrusted-build-isolation.md) | Isolation des builds non fiables | Accepted with validation gate |
 | [0007](0007-product-and-runtime-boundaries.md) | Frontières E-FLEX App / Build Fleet / Runtime | Accepted |
 | [0008](0008-no-general-purpose-orchestrator-v1.md) | Pas de Kubernetes, Nomad ou Temporal obligatoires en v1 | Accepted |
-| [0009](0009-deferred-start-coolify-build-server.md) | Démarrage différé ; serveur de build Coolify en attendant | Accepted |
+| [0009](0009-deferred-start-coolify-build-server.md) | Démarrage différé ; serveur de build Coolify en attendant | Superseded en partie par 0010 |
+| [0010](0010-reprise-du-developpement.md) | Reprise du développement ; chemin Coolify intérimaire | Accepted |
 
 Un ADR « Accepted with validation gate » fixe la direction, mais interdit de considérer la capacité comme prête en production avant réussite des tests indiqués.
 

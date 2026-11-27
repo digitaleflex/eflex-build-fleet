@@ -59,6 +59,16 @@ func (s *Server) ReconcileExpiredLeases(ctx context.Context) (int, error) {
 	return count, nil
 }
 
+// ReconcileStaleNodes marks ready nodes whose heartbeat is older than the
+// staleness threshold as offline.
+func (s *Server) ReconcileStaleNodes(ctx context.Context) (int64, error) {
+	res, err := s.db.ExecContext(ctx, `UPDATE build_nodes SET status='offline', updated_at=now() WHERE status='ready' AND last_heartbeat_at < now() - interval '90 seconds'`)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
 // RunSchedulerLoop periodically reconciles expired leases and dispatches queued
 // jobs until ctx is cancelled.
 func (s *Server) RunSchedulerLoop(ctx context.Context, interval time.Duration, logger *slog.Logger) {
@@ -72,6 +82,11 @@ func (s *Server) RunSchedulerLoop(ctx context.Context, interval time.Duration, l
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
+			if n, err := s.ReconcileStaleNodes(ctx); err != nil {
+				logger.Warn("stale node reconciliation failed", "error", err)
+			} else if n > 0 {
+				logger.Info("marked stale nodes offline", "count", n)
+			}
 			if n, err := s.ReconcileExpiredLeases(ctx); err != nil {
 				logger.Warn("lease reconciliation failed", "error", err)
 			} else if n > 0 {

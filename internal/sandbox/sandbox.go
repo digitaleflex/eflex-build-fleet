@@ -12,12 +12,16 @@ type Sandbox interface {
 
 type Local struct {
 	Runner *buildrunner.Runner
+	Policy Policy
 }
 
 func NewLocal(workRoot string) *Local {
-	return &Local{Runner: buildrunner.New(workRoot, 0)}
+	return &Local{Runner: buildrunner.New(workRoot, 0), Policy: DefaultPolicy()}
 }
 
 func (l *Local) Run(ctx context.Context, name string, args ...string) (buildrunner.Result, error) {
+	if err := l.Policy.Check(name); err != nil {
+		return buildrunner.Result{}, err
+	}
 	return l.Runner.Run(ctx, name, args...)
 }

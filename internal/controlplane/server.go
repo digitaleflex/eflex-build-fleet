@@ -35,6 +35,7 @@ func (s *Server) Handler() http.Handler {
 	admin.HandleFunc("POST /api/v1/jobs",s.createJob)
 	admin.HandleFunc("GET /api/v1/jobs",s.listJobs)
 	admin.HandleFunc("GET /api/v1/jobs/{id}",s.getJob)
+	admin.HandleFunc("POST /api/v1/jobs/{id}/cancel",s.cancelJob)
 	admin.HandleFunc("POST /api/v1/scheduler/dispatch",s.dispatchNext)
 	mux.Handle("/api/v1/",s.withRateLimit(s.authenticate(admin),s.rl))
 	agent:=http.NewServeMux()

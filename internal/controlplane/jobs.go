@@ -43,6 +43,27 @@ type dispatchResult struct {
 	LeaseExpiresAt time.Time `json:"lease_expires_at"`
 }
 
+func (s *Server) cancelJob(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if _, err := uuid.Parse(id); err != nil {
+		writeError(w, 400, "invalid job id")
+		return
+	}
+	tenant := strings.TrimSpace(r.URL.Query().Get("tenant_id"))
+	res, err := s.db.ExecContext(r.Context(), `UPDATE build_jobs SET status='cancelled', updated_at=now() WHERE id=$1 AND ($2='' OR tenant_id=$2) AND status IN ('queued','scheduled')`, id, tenant)
+	if err != nil {
+		writeError(w, 500, "could not cancel job")
+		return
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		writeError(w, 409, "job cannot be cancelled in its current state")
+		return
+	}
+	_, _ = s.db.ExecContext(r.Context(), `INSERT INTO job_events(job_id,event_type,payload) VALUES($1,'job.cancelled',jsonb_build_object('tenant_id',$2::text))`, id, tenant)
+	writeJSON(w, 200, map[string]string{"job_id": id, "status": "cancelled"})
+}
+
 func validateCreateJob(in *createJobInput) string {
 	in.TenantID=strings.TrimSpace(in.TenantID)
 	in.SourceCommit=strings.ToLower(strings.TrimSpace(in.SourceCommit))

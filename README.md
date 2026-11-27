@@ -11,6 +11,8 @@ Build infrastructure for E-FLEX: a Control Plane schedules work and independent 
 5. Run `go mod tidy`.
 6. Start the Control Plane: `go run ./cmd/control-plane`.
 
+Integration tests (requires PostgreSQL + migrations): `make db-up && make migrate && make test-integration`.
+
 The Control Plane requires `DATABASE_URL` and `FLEET_API_TOKEN`. `/healthz` is public liveness; `/readyz` checks PostgreSQL. All `/api/v1/*` routes require a Bearer token.
 
 ## Build node API

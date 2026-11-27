@@ -75,9 +75,34 @@ func (s *Server) createJob(w http.ResponseWriter,r *http.Request) {
 	if errors.Is(err,sql.ErrNoRows)&&in.IdempotencyKey!=""{
 		err=s.db.QueryRowContext(r.Context(),`SELECT id::text,tenant_id,status,source_commit,engine,engine_version,requested_resources,required_capabilities,created_at,updated_at FROM build_jobs WHERE tenant_id=$1 AND idempotency_key=$2`,in.TenantID,in.IdempotencyKey).
 			Scan(&out.ID,&out.TenantID,&out.Status,&out.SourceCommit,&out.Engine,&out.EngineVersion,&out.RequestedResources,&out.RequiredCapabilities,&out.CreatedAt,&out.UpdatedAt)
-		if err==nil{writeJSON(w,200,out);return}
+		if err==nil{
+			samePayload := out.SourceCommit==in.SourceCommit &&
+				strings.TrimSpace(ptrString(out.Engine))==in.Engine &&
+				strings.TrimSpace(ptrString(out.EngineVersion))==in.EngineVersion &&
+				string(out.RequestedResources)==string(in.RequestedResources) &&
+				stringSliceEqual(out.RequiredCapabilities,in.RequiredCapabilities)
+			if !samePayload {
+				writeError(w,409,"idempotency key already used with a different payload")
+				return
+			}
+			writeJSON(w,200,out)
+			return
+		}
 	}
 	if err!=nil{writeError(w,500,"could not create build job");return}
+
+func ptrString(v *string) string {
+	if v == nil { return "" }
+	return *v
+}
+
+func stringSliceEqual(a, b []string) bool {
+	if len(a) != len(b) { return false }
+	for i := range a {
+		if a[i] != b[i] { return false }
+	}
+	return true
+}
 	_,_=s.db.ExecContext(r.Context(),`INSERT INTO job_events(job_id,event_type,payload) VALUES($1,'job.queued',jsonb_build_object('tenant_id',$2::text))`,out.ID,out.TenantID)
 	if s.metrics!=nil { s.metrics.inc("jobs_created_total") }
 	writeJSON(w,201,out)

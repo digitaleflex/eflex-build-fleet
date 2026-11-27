@@ -367,6 +367,30 @@ func TestIntegrationTenantIsolation(t *testing.T) {
 	}
 }
 
+func TestIntegrationIdempotencyConflict(t *testing.T) {
+	db := openIntegrationDB(t)
+	resetIntegrationDB(t, db)
+	s := newIntegrationServer(t, db)
+	h := s.Handler()
+
+	body := map[string]any{"tenant_id": "tenant-a", "source_commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "idempotency_key": "key-1"}
+	rr := doRequest(t, h, http.MethodPost, "/api/v1/jobs", body, map[string]string{"Authorization": "Bearer " + integrationAPIToken})
+	if rr.Code != http.StatusCreated {
+		t.Fatal(rr.Body.String())
+	}
+	// same payload returns same job
+	rr2 := doRequest(t, h, http.MethodPost, "/api/v1/jobs", body, map[string]string{"Authorization": "Bearer " + integrationAPIToken})
+	if rr2.Code != http.StatusOK {
+		t.Fatalf("expected 200 for same payload, got %d", rr2.Code)
+	}
+	// different payload conflicts
+	body2 := map[string]any{"tenant_id": "tenant-a", "source_commit": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "idempotency_key": "key-1"}
+	rr3 := doRequest(t, h, http.MethodPost, "/api/v1/jobs", body2, map[string]string{"Authorization": "Bearer " + integrationAPIToken})
+	if rr3.Code != http.StatusConflict {
+		t.Fatalf("expected 409 for conflicting payload, got %d", rr3.Code)
+	}
+}
+
 func itoa(v int64) string {
 	return strconv.FormatInt(v, 10)
 }

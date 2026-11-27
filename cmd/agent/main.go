@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"runtime"
 	"syscall"
 	"time"
 )
@@ -101,6 +102,7 @@ func enroll(cfg *agentConfig, logger *slog.Logger) error {
 	}
 	status, data, err := doJSON("POST", cfg.ControlPlaneURL+"/api/v1/nodes", cfg.AdminToken, map[string]any{
 		"node_name": cfg.NodeName, "agent_version": cfg.AgentVersion,
+		"capabilities": map[string]any{runtime.GOOS + "-" + runtime.GOARCH: map[string]any{"os": runtime.GOOS, "arch": runtime.GOARCH}},
 	}, nil)
 	if err != nil || status != 201 {
 		return fmt.Errorf("register node failed: %d %s %v", status, string(data), err)

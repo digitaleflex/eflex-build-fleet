@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"regexp"
 	"strings"
@@ -31,11 +32,35 @@ type job struct {
 	Engine *string `json:"engine"`
 	EngineVersion *string `json:"engine_version"`
 	RequestedResources json.RawMessage `json:"requested_resources"`
-	RequiredCapabilities []string `json:"required_capabilities"`
+	RequiredCapabilities stringSlice `json:"required_capabilities"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
+
+// stringSlice scans a PostgreSQL array column that has been projected through
+// array_to_json(...). The pgx stdlib driver surfaces native array columns as
+// string literals ("{a,b}") that database/sql cannot decode into []string, so
+// queries must wrap the column and scan into this type.
+type stringSlice []string
+
+func (s *stringSlice) Scan(src any) error {
+	if src == nil {
+		*s = nil
+		return nil
+	}
+	var b []byte
+	switch v := src.(type) {
+	case []byte:
+		b = v
+	case string:
+		b = []byte(v)
+	default:
+		return fmt.Errorf("stringSlice: unsupported scan source %T", src)
+	}
+	return json.Unmarshal(b, (*[]string)(s))
+}
 type dispatchResult struct {
+	Dispatched bool `json:"dispatched"`
 	JobID string `json:"job_id"`
 	AttemptID string `json:"attempt_id"`
 	NodeID string `json:"node_id"`
@@ -90,18 +115,18 @@ func (s *Server) createJob(w http.ResponseWriter,r *http.Request) {
 	err:=s.db.QueryRowContext(r.Context(),`INSERT INTO build_jobs(tenant_id,idempotency_key,status,source_commit,engine,engine_version,requested_resources,required_capabilities)
 		VALUES($1,NULLIF($2,''),'queued',$3,NULLIF($4,''),NULLIF($5,''),$6::jsonb,$7::text[])
 		ON CONFLICT (tenant_id,idempotency_key) DO NOTHING
-		RETURNING id::text,tenant_id,status,source_commit,engine,engine_version,requested_resources,required_capabilities,created_at,updated_at`,
+		RETURNING id::text,tenant_id,status,source_commit,engine,engine_version,requested_resources,array_to_json(required_capabilities),created_at,updated_at`,
 		in.TenantID,in.IdempotencyKey,in.SourceCommit,in.Engine,in.EngineVersion,string(in.RequestedResources),caps).
 		Scan(&out.ID,&out.TenantID,&out.Status,&out.SourceCommit,&out.Engine,&out.EngineVersion,&out.RequestedResources,&out.RequiredCapabilities,&out.CreatedAt,&out.UpdatedAt)
 	if errors.Is(err,sql.ErrNoRows)&&in.IdempotencyKey!=""{
-		err=s.db.QueryRowContext(r.Context(),`SELECT id::text,tenant_id,status,source_commit,engine,engine_version,requested_resources,required_capabilities,created_at,updated_at FROM build_jobs WHERE tenant_id=$1 AND idempotency_key=$2`,in.TenantID,in.IdempotencyKey).
+		err=s.db.QueryRowContext(r.Context(),`SELECT id::text,tenant_id,status,source_commit,engine,engine_version,requested_resources,array_to_json(required_capabilities),created_at,updated_at FROM build_jobs WHERE tenant_id=$1 AND idempotency_key=$2`,in.TenantID,in.IdempotencyKey).
 			Scan(&out.ID,&out.TenantID,&out.Status,&out.SourceCommit,&out.Engine,&out.EngineVersion,&out.RequestedResources,&out.RequiredCapabilities,&out.CreatedAt,&out.UpdatedAt)
 		if err==nil{
 			samePayload := out.SourceCommit==in.SourceCommit &&
 				strings.TrimSpace(ptrString(out.Engine))==in.Engine &&
 				strings.TrimSpace(ptrString(out.EngineVersion))==in.EngineVersion &&
 				string(out.RequestedResources)==string(in.RequestedResources) &&
-				stringSliceEqual(out.RequiredCapabilities,in.RequiredCapabilities)
+				stringSliceEqual([]string(out.RequiredCapabilities),in.RequiredCapabilities)
 			if !samePayload {
 				writeError(w,409,"idempotency key already used with a different payload")
 				return
@@ -111,6 +136,10 @@ func (s *Server) createJob(w http.ResponseWriter,r *http.Request) {
 		}
 	}
 	if err!=nil{writeError(w,500,"could not create build job");return}
+	_,_=s.db.ExecContext(r.Context(),`INSERT INTO job_events(job_id,event_type,payload) VALUES($1,'job.queued',jsonb_build_object('tenant_id',$2::text))`,out.ID,out.TenantID)
+	if s.metrics!=nil { s.metrics.inc("jobs_created_total") }
+	writeJSON(w,201,out)
+}
 
 func ptrString(v *string) string {
 	if v == nil { return "" }
@@ -124,15 +153,11 @@ func stringSliceEqual(a, b []string) bool {
 	}
 	return true
 }
-	_,_=s.db.ExecContext(r.Context(),`INSERT INTO job_events(job_id,event_type,payload) VALUES($1,'job.queued',jsonb_build_object('tenant_id',$2::text))`,out.ID,out.TenantID)
-	if s.metrics!=nil { s.metrics.inc("jobs_created_total") }
-	writeJSON(w,201,out)
-}
 
 func (s *Server) listJobs(w http.ResponseWriter,r *http.Request) {
 	tenant:=strings.TrimSpace(r.URL.Query().Get("tenant_id"))
 	if tenant==""{writeError(w,400,"tenant_id query parameter is required");return}
-	rows,err:=s.db.QueryContext(r.Context(),`SELECT id::text,tenant_id,status,source_commit,engine,engine_version,requested_resources,required_capabilities,created_at,updated_at FROM build_jobs WHERE tenant_id=$1 ORDER BY created_at DESC LIMIT 100`,tenant)
+	rows,err:=s.db.QueryContext(r.Context(),`SELECT id::text,tenant_id,status,source_commit,engine,engine_version,requested_resources,array_to_json(required_capabilities),created_at,updated_at FROM build_jobs WHERE tenant_id=$1 ORDER BY created_at DESC LIMIT 100`,tenant)
 	if err!=nil{writeError(w,500,"could not list jobs");return};defer rows.Close()
 	items:=make([]job,0)
 	for rows.Next(){var j job;if err:=rows.Scan(&j.ID,&j.TenantID,&j.Status,&j.SourceCommit,&j.Engine,&j.EngineVersion,&j.RequestedResources,&j.RequiredCapabilities,&j.CreatedAt,&j.UpdatedAt);err!=nil{writeError(w,500,"could not read jobs");return};items=append(items,j)}
@@ -146,10 +171,10 @@ func (s *Server) getJob(w http.ResponseWriter,r *http.Request) {
 	var j job
 	var err error
 	if tenant!="" {
-		err=s.db.QueryRowContext(r.Context(),`SELECT id::text,tenant_id,status,source_commit,engine,engine_version,requested_resources,required_capabilities,created_at,updated_at FROM build_jobs WHERE id=$1 AND tenant_id=$2`,id,tenant).
+		err=s.db.QueryRowContext(r.Context(),`SELECT id::text,tenant_id,status,source_commit,engine,engine_version,requested_resources,array_to_json(required_capabilities),created_at,updated_at FROM build_jobs WHERE id=$1 AND tenant_id=$2`,id,tenant).
 			Scan(&j.ID,&j.TenantID,&j.Status,&j.SourceCommit,&j.Engine,&j.EngineVersion,&j.RequestedResources,&j.RequiredCapabilities,&j.CreatedAt,&j.UpdatedAt)
 	} else {
-		err=s.db.QueryRowContext(r.Context(),`SELECT id::text,tenant_id,status,source_commit,engine,engine_version,requested_resources,required_capabilities,created_at,updated_at FROM build_jobs WHERE id=$1`,id).
+		err=s.db.QueryRowContext(r.Context(),`SELECT id::text,tenant_id,status,source_commit,engine,engine_version,requested_resources,array_to_json(required_capabilities),created_at,updated_at FROM build_jobs WHERE id=$1`,id).
 			Scan(&j.ID,&j.TenantID,&j.Status,&j.SourceCommit,&j.Engine,&j.EngineVersion,&j.RequestedResources,&j.RequiredCapabilities,&j.CreatedAt,&j.UpdatedAt)
 	}
 	if errors.Is(err,sql.ErrNoRows){writeError(w,404,"job not found");return};if err!=nil{writeError(w,500,"could not read job");return}
@@ -179,5 +204,5 @@ func (s *Server) dispatchNext(w http.ResponseWriter,r *http.Request) {
 	if _,err=tx.ExecContext(r.Context(),`INSERT INTO outbox_events(aggregate_type,aggregate_id,event_type,payload) VALUES('build_job',$1,'job.scheduled',jsonb_build_object('node_id',$2::text,'attempt_id',$3::text,'fencing_token',$4::bigint))`,jobID,nodeID,attemptID,fencing);err!=nil{writeError(w,500,"could not record outbox event");return}
 	if err=tx.Commit();err!=nil{writeError(w,500,"could not commit dispatch");return}
 	if s.metrics!=nil { s.metrics.inc("jobs_dispatched_total") }
-	writeJSON(w,200,dispatchResult{JobID:jobID,AttemptID:attemptID,NodeID:nodeID,FencingToken:fencing,LeaseExpiresAt:expires})
+	writeJSON(w,200,dispatchResult{Dispatched:true,JobID:jobID,AttemptID:attemptID,NodeID:nodeID,FencingToken:fencing,LeaseExpiresAt:expires})
 }

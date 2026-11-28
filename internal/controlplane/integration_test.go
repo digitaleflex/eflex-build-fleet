@@ -249,7 +249,9 @@ func TestIntegrationJobDispatchAndAgentFlow(t *testing.T) {
 
 	// verify job status
 	rr = doRequest(t, h, http.MethodGet, "/api/v1/jobs/"+job.ID+"?tenant_id=tenant-a", nil, map[string]string{"Authorization": "Bearer " + integrationAPIToken})
-	var final job
+	var final struct {
+		Status string `json:"status"`
+	}
 	json.Unmarshal(rr.Body.Bytes(), &final)
 	if final.Status != "succeeded" {
 		t.Fatalf("expected succeeded, got %s", final.Status)
